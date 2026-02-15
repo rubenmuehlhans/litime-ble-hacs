@@ -3,7 +3,7 @@
   "name": "LiTime BMS BLE",
   "codeowners": ["@rubenmuehlhans"],
   "config_flow": true,
-  "dependencies": ["bluetooth_adapters"],
+  "dependencies": ["bluetooth"],
   "documentation": "https://github.com/rubenmuehlhans/litime-ble-hacs",
   "bluetooth": [
     {

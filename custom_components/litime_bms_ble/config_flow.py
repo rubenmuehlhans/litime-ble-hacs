@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components.bluetooth import (
+    BluetoothServiceInfoBleak,
+    async_discovered_service_info,
+)
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 
 from .const import CONF_DEVICE_ADDRESS, CONF_DEVICE_NAME, DEVICE_NAME_PREFIXES, DOMAIN
-
-if TYPE_CHECKING:
-    from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,8 +25,8 @@ class LitimeBmsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._discovered_devices: dict[str, Any] = {}
-        self._discovery_info: Any = None
+        self._discovered_devices: dict[str, str] = {}
+        self._discovery_info: BluetoothServiceInfoBleak | None = None
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -50,84 +51,57 @@ class LitimeBmsConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Confirm discovery of a LiTime BMS device."""
         assert self._discovery_info is not None
+        title = self._discovery_info.name or self._discovery_info.address
 
         if user_input is not None:
             return self.async_create_entry(
-                title=self._discovery_info.name or self._discovery_info.address,
+                title=title,
                 data={
                     CONF_DEVICE_ADDRESS: self._discovery_info.address,
-                    CONF_DEVICE_NAME: self._discovery_info.name or self._discovery_info.address,
+                    CONF_DEVICE_NAME: title,
                 },
             )
 
         self._set_confirm_only()
         return self.async_show_form(
             step_id="bluetooth_confirm",
-            description_placeholders={
-                "name": self._discovery_info.name or self._discovery_info.address,
-            },
+            description_placeholders={"name": title},
         )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle user-initiated configuration."""
-        errors: dict[str, str] = {}
-
+        """Handle the user step to pick discovered device."""
         if user_input is not None:
             address = user_input[CONF_DEVICE_ADDRESS]
-            await self.async_set_unique_id(address.upper())
+            await self.async_set_unique_id(address.upper(), raise_on_progress=False)
             self._abort_if_unique_id_configured()
-
-            # Get name from discovered devices or use address
-            name = address
-            if address in self._discovered_devices:
-                info = self._discovered_devices[address]
-                name = info.name or address
-
             return self.async_create_entry(
-                title=name,
+                title=self._discovered_devices[address],
                 data={
                     CONF_DEVICE_ADDRESS: address,
-                    CONF_DEVICE_NAME: name,
+                    CONF_DEVICE_NAME: self._discovered_devices[address],
                 },
             )
 
-        # Scan for nearby LiTime BMS devices
-        from homeassistant.components.bluetooth import (  # noqa: PLC0415
-            async_discovered_service_info,
-        )
-
-        self._discovered_devices = {}
-        for info in async_discovered_service_info(self.hass):
+        current_addresses = self._async_current_ids()
+        for info in async_discovered_service_info(self.hass, False):
+            address = info.address
+            if address in current_addresses or address in self._discovered_devices:
+                continue
             if info.name and any(
                 info.name.startswith(prefix) for prefix in DEVICE_NAME_PREFIXES
             ):
-                self._discovered_devices[info.address] = info
+                self._discovered_devices[address] = info.name
 
         if not self._discovered_devices:
-            return self.async_show_form(
-                step_id="user",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_DEVICE_ADDRESS): str,
-                    }
-                ),
-                errors=errors,
-            )
-
-        # Show discovered devices as selection
-        device_options = {
-            address: f"{info.name} ({address})"
-            for address, info in self._discovered_devices.items()
-        }
+            return self.async_abort(reason="no_devices_found")
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_DEVICE_ADDRESS): vol.In(device_options),
+                    vol.Required(CONF_DEVICE_ADDRESS): vol.In(self._discovered_devices),
                 }
             ),
-            errors=errors,
         )

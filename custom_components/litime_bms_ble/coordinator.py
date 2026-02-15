@@ -12,6 +12,7 @@ from bleak import BleakClient, BleakGATTCharacteristic
 from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
 
+from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -190,6 +191,7 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._device_name = name
         self._client: BleakClient | None = None
         self._write_char: BleakGATTCharacteristic | None = None
+        self._response_buffer = bytearray()
         self._response_data: bytes | None = None
         self._response_event = asyncio.Event()
         self._missed_updates = 0
@@ -209,13 +211,18 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _notification_handler(
         self, characteristic: BleakGATTCharacteristic, data: bytearray
     ) -> None:
-        """Handle BLE notification data."""
+        """Handle BLE notification data, reassembling fragmented responses."""
         _LOGGER.debug("Received notification: %d bytes", len(data))
-        if len(data) >= MIN_RESPONSE_LENGTH:
-            self._response_data = bytes(data)
+        self._response_buffer.extend(data)
+
+        if len(self._response_buffer) >= MIN_RESPONSE_LENGTH:
+            self._response_data = bytes(self._response_buffer)
+            self._response_buffer.clear()
             self._response_event.set()
         else:
-            _LOGGER.debug("Received short response (%d bytes), ignoring", len(data))
+            _LOGGER.debug(
+                "Buffered %d/%d bytes", len(self._response_buffer), MIN_RESPONSE_LENGTH
+            )
 
     async def _ensure_connected(self) -> bool:
         """Ensure BLE connection is established."""
@@ -223,8 +230,6 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return True
 
         try:
-            from homeassistant.components import bluetooth  # noqa: PLC0415
-
             device = bluetooth.async_ble_device_from_address(
                 self.hass, self.address, connectable=True
             )
@@ -298,9 +303,10 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return self._offline_data()
             raise UpdateFailed(f"Cannot connect to {self.address}")
 
-        # Reset event and send status query
+        # Reset event, buffer and send status query
         self._response_event.clear()
         self._response_data = None
+        self._response_buffer.clear()
 
         try:
             await self._send_command(CMD_QUERY_STATUS)

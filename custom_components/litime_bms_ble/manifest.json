@@ -9,14 +9,10 @@
     {
       "local_name": "LT-*",
       "connectable": true
-    },
-    {
-      "local_name": "L-*",
-      "connectable": true
     }
   ],
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/rubenmuehlhans/litime-ble-hacs/issues",
-  "requirements": ["bleak>=0.21.0", "bleak-retry-connector>=3.5.0"],
+  "requirements": [],
   "version": "1.0.0"
 }

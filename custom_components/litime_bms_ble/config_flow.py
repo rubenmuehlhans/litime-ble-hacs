@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
-from homeassistant.components.bluetooth import (
-    BluetoothServiceInfoBleak,
-    async_discovered_service_info,
-)
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_ADDRESS
 
 from .const import CONF_DEVICE_ADDRESS, CONF_DEVICE_NAME, DEVICE_NAME_PREFIXES, DOMAIN
+
+if TYPE_CHECKING:
+    from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,8 +24,8 @@ class LitimeBmsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._discovered_devices: dict[str, BluetoothServiceInfoBleak] = {}
-        self._discovery_info: BluetoothServiceInfoBleak | None = None
+        self._discovered_devices: dict[str, Any] = {}
+        self._discovery_info: Any = None
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -84,7 +82,8 @@ class LitimeBmsConfigFlow(ConfigFlow, domain=DOMAIN):
             # Get name from discovered devices or use address
             name = address
             if address in self._discovered_devices:
-                name = self._discovered_devices[address].name or address
+                info = self._discovered_devices[address]
+                name = info.name or address
 
             return self.async_create_entry(
                 title=name,
@@ -95,6 +94,10 @@ class LitimeBmsConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         # Scan for nearby LiTime BMS devices
+        from homeassistant.components.bluetooth import (  # noqa: PLC0415
+            async_discovered_service_info,
+        )
+
         self._discovered_devices = {}
         for info in async_discovered_service_info(self.hass):
             if info.name and any(

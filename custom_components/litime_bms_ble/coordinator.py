@@ -12,8 +12,6 @@ from bleak import BleakClient, BleakGATTCharacteristic
 from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
 
-from homeassistant.components import bluetooth
-from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -225,6 +223,8 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return True
 
         try:
+            from homeassistant.components import bluetooth  # noqa: PLC0415
+
             device = bluetooth.async_ble_device_from_address(
                 self.hass, self.address, connectable=True
             )

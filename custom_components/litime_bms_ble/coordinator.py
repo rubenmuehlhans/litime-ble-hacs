@@ -25,7 +25,6 @@ from .const import (
     CMD_DISCHARGE_OFF,
     CMD_DISCHARGE_ON,
     CMD_QUERY_STATUS,
-    CMD_REGISTER,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     MAX_CELLS,
@@ -38,6 +37,10 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Response marker: byte[2] == 0x65 indicates a valid status response
+RESPONSE_MARKER_OFFSET = 2
+RESPONSE_MARKER_VALUE = 0x65
 
 
 def _build_command(cmd: int) -> bytes:
@@ -69,17 +72,21 @@ def _decode_failure_flags(flags: int) -> str:
 
 
 def _parse_status_response(data: bytes) -> dict[str, Any]:
-    """Parse 104-byte status response from the BMS.
+    """Parse status response from the BMS.
 
-    All values are little-endian.
+    Offsets are based on the raw BLE notification data (verified against
+    the working ESPHome YAML configuration). All multi-byte values are
+    little-endian.
     """
     if len(data) < MIN_RESPONSE_LENGTH:
-        raise ValueError(f"Response too short: {len(data)} bytes, expected >= {MIN_RESPONSE_LENGTH}")
+        raise ValueError(
+            f"Response too short: {len(data)} bytes, expected >= {MIN_RESPONSE_LENGTH}"
+        )
 
     result: dict[str, Any] = {}
 
-    # Total voltage (bytes 8-11, uint32_le, mV -> V)
-    total_voltage = struct.unpack_from("<I", data, 8)[0] / 1000.0
+    # Total voltage (bytes 12-15, uint32_le, mV -> V)
+    total_voltage = struct.unpack_from("<I", data, 12)[0] / 1000.0
     result["total_voltage"] = total_voltage
 
     # Individual cell voltages (bytes 16-47, 16x uint16_le, mV -> V)
@@ -157,8 +164,8 @@ def _parse_status_response(data: bytes) -> dict[str, Any]:
     # SOC (bytes 90-91, uint16_le, %)
     result["state_of_charge"] = struct.unpack_from("<H", data, 90)[0]
 
-    # SOH (bytes 92-95, uint32_le, %)
-    result["state_of_health"] = struct.unpack_from("<I", data, 92)[0]
+    # SOH (bytes 92-93, uint16_le, %)
+    result["state_of_health"] = struct.unpack_from("<H", data, 92)[0]
 
     # Discharge cycle count (bytes 96-99, uint32_le)
     result["discharge_cycles"] = struct.unpack_from("<I", data, 96)[0]
@@ -191,6 +198,7 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._device_name = name
         self._client: BleakClient | None = None
         self._write_char: BleakGATTCharacteristic | None = None
+        self._notify_char: BleakGATTCharacteristic | None = None
         self._response_buffer = bytearray()
         self._response_data: bytes | None = None
         self._response_event = asyncio.Event()
@@ -211,17 +219,37 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _notification_handler(
         self, characteristic: BleakGATTCharacteristic, data: bytearray
     ) -> None:
-        """Handle BLE notification data, reassembling fragmented responses."""
-        _LOGGER.debug("Received notification: %d bytes", len(data))
-        self._response_buffer.extend(data)
+        """Handle BLE notification data."""
+        _LOGGER.debug(
+            "Notification: %d bytes, hex=%s",
+            len(data),
+            data.hex(),
+        )
+
+        # Check for response marker at byte[2] == 0x65
+        if len(data) > RESPONSE_MARKER_OFFSET and data[RESPONSE_MARKER_OFFSET] == RESPONSE_MARKER_VALUE:
+            # This is a status response - could arrive in one packet or fragmented
+            self._response_buffer = bytearray(data)
+        else:
+            # Continuation fragment or non-status packet
+            if len(self._response_buffer) > 0:
+                self._response_buffer.extend(data)
+            else:
+                _LOGGER.debug("Ignoring non-status notification (%d bytes)", len(data))
+                return
 
         if len(self._response_buffer) >= MIN_RESPONSE_LENGTH:
+            _LOGGER.debug(
+                "Complete response: %d bytes", len(self._response_buffer)
+            )
             self._response_data = bytes(self._response_buffer)
             self._response_buffer.clear()
             self._response_event.set()
         else:
             _LOGGER.debug(
-                "Buffered %d/%d bytes", len(self._response_buffer), MIN_RESPONSE_LENGTH
+                "Buffered %d/%d bytes",
+                len(self._response_buffer),
+                MIN_RESPONSE_LENGTH,
             )
 
     async def _ensure_connected(self) -> bool:
@@ -244,35 +272,58 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 max_attempts=3,
             )
 
-            # Find the write characteristic
-            for service in self._client.services:
-                if service.uuid.lower() == SERVICE_UUID:
-                    for char in service.characteristics:
-                        if char.uuid.lower() == WRITE_CHAR_UUID:
-                            self._write_char = char
-                        if char.uuid.lower() == NOTIFY_CHAR_UUID:
-                            await self._client.start_notify(
-                                char, self._notification_handler
-                            )
-                            _LOGGER.debug("Subscribed to notifications on %s", char.uuid)
+            # Log all services and characteristics for debugging
+            notify_char = None
+            write_char = None
 
-            if self._write_char is None:
-                _LOGGER.error("Write characteristic (FFE2) not found")
+            for service in self._client.services:
+                _LOGGER.debug("Service: %s", service.uuid)
+                for char in service.characteristics:
+                    props = char.properties
+                    _LOGGER.debug("  Char: %s properties=%s", char.uuid, props)
+
+                    if service.uuid.lower() == SERVICE_UUID:
+                        if "notify" in props and char.uuid.lower() == NOTIFY_CHAR_UUID:
+                            notify_char = char
+                        if "write-without-response" in props or "write" in props:
+                            if char.uuid.lower() == WRITE_CHAR_UUID:
+                                write_char = char
+                            elif char.uuid.lower() == NOTIFY_CHAR_UUID and write_char is None:
+                                write_char = char
+
+            # Subscribe to notifications on FFE1
+            if notify_char is not None:
+                await self._client.start_notify(
+                    notify_char, self._notification_handler
+                )
+                self._notify_char = notify_char
+                _LOGGER.info("Subscribed to notifications on %s", notify_char.uuid)
+            else:
+                _LOGGER.error("Notify characteristic (FFE1) not found")
                 await self._client.disconnect()
                 self._client = None
                 return False
 
-            # Send registration command
-            await self._send_command(CMD_REGISTER)
+            # Use write characteristic (prefer FFE2, fallback FFE1)
+            if write_char is not None:
+                self._write_char = write_char
+                _LOGGER.info("Using write characteristic %s", write_char.uuid)
+            else:
+                _LOGGER.error("No writable characteristic found")
+                await self._client.disconnect()
+                self._client = None
+                return False
+
             self._connected = True
             self._missed_updates = 0
             _LOGGER.info("Connected to LiTime BMS %s", self.address)
             return True
 
         except (BleakError, TimeoutError, OSError) as err:
-            _LOGGER.debug("Failed to connect to %s: %s", self.address, err)
+            _LOGGER.warning("Failed to connect to %s: %s", self.address, err)
             self._client = None
             self._write_char = None
+            self._notify_char = None
             self._connected = False
             return False
 
@@ -283,7 +334,13 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         frame = _build_command(cmd)
-        _LOGGER.debug("Sending command 0x%02X (%d bytes)", cmd, len(frame))
+        _LOGGER.debug(
+            "Sending command 0x%02X to %s (%d bytes, hex=%s)",
+            cmd,
+            self._write_char.uuid,
+            len(frame),
+            frame.hex(),
+        )
         try:
             await self._client.write_gatt_char(
                 self._write_char, frame, response=False
@@ -315,14 +372,19 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._connected = False
             self._client = None
             self._write_char = None
+            self._notify_char = None
             if self._missed_updates >= MAX_MISSED_UPDATES:
                 return self._offline_data()
             raise UpdateFailed(f"Failed to send query: {err}") from err
 
         # Wait for response with timeout
         try:
-            await asyncio.wait_for(self._response_event.wait(), timeout=5.0)
+            await asyncio.wait_for(self._response_event.wait(), timeout=10.0)
         except TimeoutError:
+            _LOGGER.warning(
+                "Timeout waiting for response (buffer has %d bytes)",
+                len(self._response_buffer),
+            )
             self._missed_updates += 1
             if self._missed_updates >= MAX_MISSED_UPDATES:
                 _LOGGER.warning(
@@ -378,7 +440,6 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
         cmd = CMD_CHARGE_ON if enabled else CMD_CHARGE_OFF
         await self._send_command(cmd)
-        # Request immediate update
         await self.async_request_refresh()
 
     async def async_set_discharging(self, enabled: bool) -> None:
@@ -389,7 +450,6 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
         cmd = CMD_DISCHARGE_ON if enabled else CMD_DISCHARGE_OFF
         await self._send_command(cmd)
-        # Request immediate update
         await self.async_request_refresh()
 
     async def async_set_connection_enabled(self, enabled: bool) -> None:
@@ -413,4 +473,5 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 pass
         self._client = None
         self._write_char = None
+        self._notify_char = None
         self._connected = False

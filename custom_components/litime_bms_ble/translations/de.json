@@ -1,0 +1,70 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "LiTime BMS BLE",
+        "description": "LiTime BMS-Gerät auswählen oder Bluetooth-Adresse manuell eingeben.",
+        "data": {
+          "device_address": "Geräteadresse"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "LiTime BMS BLE",
+        "description": "Einrichtung von {name} bestätigen"
+      }
+    },
+    "abort": {
+      "already_configured": "Gerät ist bereits konfiguriert",
+      "no_devices_found": "Keine LiTime BMS-Geräte in der Nähe gefunden"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "total_voltage": { "name": "Gesamtspannung" },
+      "current": { "name": "Strom" },
+      "power": { "name": "Leistung" },
+      "state_of_charge": { "name": "Ladezustand" },
+      "state_of_health": { "name": "Gesundheitszustand" },
+      "cell_temperature": { "name": "Zellentemperatur" },
+      "mosfet_temperature": { "name": "MOSFET-Temperatur" },
+      "remaining_capacity": { "name": "Restkapazität" },
+      "full_charge_capacity": { "name": "Gesamtkapazität" },
+      "discharge_cycles": { "name": "Ladezyklen" },
+      "total_discharge_ah": { "name": "Gesamtentladung" },
+      "min_cell_voltage": { "name": "Min. Zellenspannung" },
+      "max_cell_voltage": { "name": "Max. Zellenspannung" },
+      "delta_cell_voltage": { "name": "Delta Zellenspannung" },
+      "protection_status": { "name": "Schutzstatus" },
+      "failure_status": { "name": "Fehlerstatus" },
+      "estimate_15_soc_time": { "name": "Uhrzeit bei 15% SOC" },
+      "remaining_time_hours": { "name": "Restzeit bis 15% SOC" },
+      "cell_voltage_1": { "name": "Zellenspannung 1" },
+      "cell_voltage_2": { "name": "Zellenspannung 2" },
+      "cell_voltage_3": { "name": "Zellenspannung 3" },
+      "cell_voltage_4": { "name": "Zellenspannung 4" },
+      "cell_voltage_5": { "name": "Zellenspannung 5" },
+      "cell_voltage_6": { "name": "Zellenspannung 6" },
+      "cell_voltage_7": { "name": "Zellenspannung 7" },
+      "cell_voltage_8": { "name": "Zellenspannung 8" },
+      "cell_voltage_9": { "name": "Zellenspannung 9" },
+      "cell_voltage_10": { "name": "Zellenspannung 10" },
+      "cell_voltage_11": { "name": "Zellenspannung 11" },
+      "cell_voltage_12": { "name": "Zellenspannung 12" },
+      "cell_voltage_13": { "name": "Zellenspannung 13" },
+      "cell_voltage_14": { "name": "Zellenspannung 14" },
+      "cell_voltage_15": { "name": "Zellenspannung 15" },
+      "cell_voltage_16": { "name": "Zellenspannung 16" }
+    },
+    "binary_sensor": {
+      "charging": { "name": "Laden" },
+      "discharging": { "name": "Entladen" },
+      "balancing": { "name": "Balancierung" },
+      "online": { "name": "Online" }
+    },
+    "switch": {
+      "charging_switch": { "name": "Laden" },
+      "discharging_switch": { "name": "Entladen" },
+      "connection": { "name": "Verbindung" }
+    }
+  }
+}

@@ -36,6 +36,8 @@
       "delta_cell_voltage": { "name": "Delta cell voltage" },
       "protection_status": { "name": "Protection status" },
       "failure_status": { "name": "Failure status" },
+      "estimate_15_soc_time": { "name": "Estimated time at 15% SOC" },
+      "remaining_time_hours": { "name": "Remaining time to 15% SOC" },
       "cell_voltage_1": { "name": "Cell voltage 1" },
       "cell_voltage_2": { "name": "Cell voltage 2" },
       "cell_voltage_3": { "name": "Cell voltage 3" },

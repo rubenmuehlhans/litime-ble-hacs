@@ -19,6 +19,7 @@ from homeassistant.const import (
     UnitOfElectricPotential,
     UnitOfPower,
     UnitOfTemperature,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -174,6 +175,23 @@ SENSOR_DESCRIPTIONS: tuple[LitimeSensorEntityDescription, ...] = (
         translation_key="failure_status",
         icon="mdi:alert-circle",
         value_fn=lambda data: data.get("failure_status"),
+    ),
+    LitimeSensorEntityDescription(
+        key="estimate_15_soc_time",
+        translation_key="estimate_15_soc_time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:clock",
+        value_fn=lambda data: data.get("estimate_15_soc_time"),
+    ),
+    LitimeSensorEntityDescription(
+        key="remaining_time_hours",
+        translation_key="remaining_time_hours",
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        icon="mdi:timer-outline",
+        value_fn=lambda data: data.get("remaining_time_hours"),
     ),
 )
 

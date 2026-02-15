@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import struct
 from typing import Any
@@ -172,6 +172,28 @@ def _parse_status_response(data: bytes) -> dict[str, Any]:
 
     # Total discharge Ah (bytes 100-103, uint32_le, mAh -> Ah)
     result["total_discharge_ah"] = struct.unpack_from("<I", data, 100)[0] / 1000.0
+
+    # Estimated time to reach 15% SOC (or full charge if charging)
+    remaining_cap = result["remaining_capacity"]
+    full_cap = result["full_charge_capacity"]
+    if current == 0 or full_cap == 0:
+        result["estimate_15_soc_time"] = None
+        result["remaining_time_hours"] = None
+    else:
+        if current > 0:
+            # Charging: estimate time to full
+            target_cap = full_cap
+        else:
+            # Discharging: estimate time to 15%
+            target_cap = full_cap * 0.15
+
+        capacity_delta = remaining_cap - target_cap
+        # remaining_time in hours: (remaining - target) / abs(current)
+        remaining_hours = abs(capacity_delta / current)
+        result["remaining_time_hours"] = round(remaining_hours, 2)
+
+        now = datetime.now(timezone.utc)
+        result["estimate_15_soc_time"] = now + timedelta(hours=remaining_hours)
 
     result["online"] = True
 
@@ -467,6 +489,8 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "discharge_enabled": None,
             "protection_status": None,
             "failure_status": None,
+            "estimate_15_soc_time": None,
+            "remaining_time_hours": None,
         }
 
     async def async_set_charging(self, enabled: bool) -> None:

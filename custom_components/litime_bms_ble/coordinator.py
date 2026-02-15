@@ -47,9 +47,9 @@ def _build_command(cmd: int) -> bytes:
     """Build an 8-byte command frame.
 
     Format: {0x00, 0x00, 0x04, 0x01, CMD, 0x55, 0xAA, CHECKSUM}
-    Checksum = 0x04 + 0x01 + CMD = 0x05 + CMD
+    Checksum = 0x04 + CMD (verified against working ESPHome YAML).
     """
-    checksum = 0x04 + 0x01 + cmd
+    checksum = 0x04 + cmd
     return bytes([0x00, 0x00, 0x04, 0x01, cmd, 0x55, 0xAA, checksum & 0xFF])
 
 

@@ -11,9 +11,11 @@ Home Assistant custom integration for monitoring and controlling **LiTime**, **R
 - Real-time monitoring of battery status, voltages, temperatures, and more
 - Individual cell voltage monitoring (up to 16 cells)
 - Charge/discharge control via switches
+- Estimated time until 15% SOC (or full charge)
 - Protection and failure status reporting
-- Offline detection after missed updates
+- Automatic reconnection and offline detection
 - Multi-battery support
+- German and English translations
 
 ## Supported Devices
 
@@ -29,6 +31,7 @@ The BMS must advertise BLE service UUID `0xFFE0`.
 
 - Home Assistant 2024.2.0 or newer
 - Bluetooth adapter on the Home Assistant host (built-in, USB dongle, or ESPHome Bluetooth Proxy)
+- The BMS must not be connected to another BLE client (e.g. an ESP32 running ESPHome) at the same time
 
 ## Installation
 
@@ -56,7 +59,7 @@ If your Home Assistant host has a Bluetooth adapter, LiTime batteries within ran
 
 1. Go to **Settings** > **Devices & Services** > **Add Integration**
 2. Search for **LiTime BMS BLE**
-3. Select your battery from the list of discovered devices, or enter the Bluetooth address manually
+3. Select your battery from the list of discovered devices
 
 ## Entities
 
@@ -65,10 +68,10 @@ If your Home Assistant host has a Bluetooth adapter, LiTime batteries within ran
 | Sensor | Unit | Description |
 |---|---|---|
 | Total voltage | V | Battery pack total voltage |
-| Current | A | Charge/discharge current |
+| Current | A | Charge/discharge current (negative = discharging) |
 | Power | W | Calculated power (voltage x current) |
-| State of charge | % | Battery charge level |
-| State of health | % | Battery health percentage |
+| State of charge | % | Battery charge level (SOC) |
+| State of health | % | Battery health (SOH) |
 | Cell temperature | °C | Battery cell temperature |
 | MOSFET temperature | °C | BMS MOSFET temperature |
 | Remaining capacity | Ah | Remaining usable capacity |
@@ -81,6 +84,8 @@ If your Home Assistant host has a Bluetooth adapter, LiTime batteries within ran
 | Cell voltage 1-16 | V | Individual cell voltages |
 | Protection status | - | Active protection alerts (or "OK") |
 | Failure status | - | Active failure alerts (or "OK") |
+| Estimated time at 15% SOC | - | Timestamp when 15% SOC will be reached (or full charge when charging) |
+| Remaining time to 15% SOC | h | Hours until 15% SOC is reached (or full charge when charging) |
 
 ### Binary Sensors
 
@@ -115,24 +120,26 @@ Commands are 8 bytes:
 {0x00, 0x00, 0x04, 0x01, CMD, 0x55, 0xAA, CHECKSUM}
 ```
 
-Checksum = `0x04 + 0x01 + CMD`
+Checksum = `0x04 + CMD`
 
 ### Commands
 
-| Command | Code | Description |
-|---|---|---|
-| Register | `0x01` | Initial registration after connection |
-| Query status | `0x13` | Request 104-byte status response |
-| Charge on | `0x0A` | Enable charging |
-| Charge off | `0x0B` | Disable charging |
-| Discharge on | `0x0C` | Enable discharging |
-| Discharge off | `0x0D` | Disable discharging |
+| Command | Code | Checksum | Description |
+|---|---|---|---|
+| Query status | `0x13` | `0x17` | Request 104-byte status response |
+| Charge on | `0x0A` | `0x0E` | Enable charging |
+| Charge off | `0x0B` | `0x0F` | Disable charging |
+| Discharge on | `0x0C` | `0x10` | Enable discharging |
+| Discharge off | `0x0D` | `0x11` | Disable discharging |
 
-### Status response (104 bytes, little-endian)
+### Status response format
+
+The BMS responds with a notification on FFE1. Valid status responses have byte `[2] == 0x65`. The response is at least 104 bytes, little-endian:
 
 | Offset | Size | Type | Description |
 |---|---|---|---|
-| 8-11 | 4 | uint32 | Total voltage (mV) |
+| 2 | 1 | uint8 | Response marker (`0x65` for status) |
+| 12-15 | 4 | uint32 | Total voltage (mV) |
 | 16-47 | 32 | 16x uint16 | Cell voltages (mV each) |
 | 48-51 | 4 | int32 | Current (mA, negative = discharging) |
 | 52-53 | 2 | int16 | Cell temperature (°C) |
@@ -142,10 +149,10 @@ Checksum = `0x04 + 0x01 + CMD`
 | 68-71 | 4 | uint32 | Heat state (bit 0x80 = discharge disabled) |
 | 76-79 | 4 | uint32 | Protection flags |
 | 80-83 | 4 | uint32 | Failure flags |
-| 84-87 | 4 | uint32 | Balancing state |
+| 84-87 | 4 | uint32 | Balancing state (per byte per cell) |
 | 88-89 | 2 | uint16 | Battery state (0x0000=discharging, 0x0001=charging, 0x0004=charge disabled) |
 | 90-91 | 2 | uint16 | State of charge (%) |
-| 92-95 | 4 | uint32 | State of health (%) |
+| 92-93 | 2 | uint16 | State of health (%) |
 | 96-99 | 4 | uint32 | Discharge cycle count |
 | 100-103 | 4 | uint32 | Total discharge (mAh) |
 
@@ -170,19 +177,28 @@ Checksum = `0x04 + 0x01 + CMD`
 - Ensure Bluetooth is enabled on your Home Assistant host
 - Check that the battery is powered on and within BLE range (~10m)
 - LiTime batteries advertise with names starting with `LT-` or `L-`
-- Try adding the integration manually with the Bluetooth MAC address
+- Make sure no other BLE client (e.g. ESP32 with ESPHome) is connected to the BMS - BLE only allows one connection at a time
+- Try adding the integration manually via **Settings** > **Devices & Services** > **Add Integration**
 
-### Connection drops
+### "Timeout waiting for response"
+
+- The BMS is connected but not responding to queries
+- Check that the BMS firmware supports the status query command (`0x13`)
+- Check the Home Assistant logs for debug output (`Notification: ... hex=...`)
+
+### Connection drops / "InProgress" errors
 
 - BLE range is limited to approximately 10 meters
 - Consider using an [ESPHome Bluetooth Proxy](https://esphome.github.io/bluetooth-proxies/) to extend range
-- The integration automatically reconnects and marks the device offline after 5 missed updates
+- The integration polls every 30 seconds and automatically reconnects
+- If you see `InProgress` errors, restart Home Assistant to reset the Bluetooth adapter state
 
 ### Sensors show "Unavailable"
 
-- The battery may be out of BLE range
+- The battery may be out of BLE range or powered off
 - Check the **Online** binary sensor for connection status
-- Restart the integration if the issue persists
+- The integration starts with all sensors unavailable and updates them once a successful BLE response is received
+- Use the **Connection** switch to manually disconnect/reconnect
 
 ## License
 

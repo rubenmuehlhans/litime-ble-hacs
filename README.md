@@ -3,6 +3,8 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 [![GitHub Release](https://img.shields.io/github/v/release/rubenmuehlhans/litime-ble-hacs)](https://github.com/rubenmuehlhans/litime-ble-hacs/releases)
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=rubenmuehlhans&repository=litime-ble-hacs&category=integration)
+
 Home Assistant custom integration for monitoring and controlling **LiTime**, **Redodo**, and **PowerQueen** LiFePO4 batteries via Bluetooth Low Energy (BLE).
 
 ## Features

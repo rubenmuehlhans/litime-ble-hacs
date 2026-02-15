@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "LiTime BMS BLE",
+        "description": "Select your LiTime BMS device or enter its Bluetooth address manually.",
+        "data": {
+          "device_address": "Device address"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "LiTime BMS BLE",
+        "description": "Confirm setup of {name}"
+      }
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "total_voltage": { "name": "Total voltage" },
+      "current": { "name": "Current" },
+      "power": { "name": "Power" },
+      "state_of_charge": { "name": "State of charge" },
+      "state_of_health": { "name": "State of health" },
+      "cell_temperature": { "name": "Cell temperature" },
+      "mosfet_temperature": { "name": "MOSFET temperature" },
+      "remaining_capacity": { "name": "Remaining capacity" },
+      "full_charge_capacity": { "name": "Full charge capacity" },
+      "discharge_cycles": { "name": "Discharge cycles" },
+      "total_discharge_ah": { "name": "Total discharge" },
+      "min_cell_voltage": { "name": "Min cell voltage" },
+      "max_cell_voltage": { "name": "Max cell voltage" },
+      "delta_cell_voltage": { "name": "Delta cell voltage" },
+      "protection_status": { "name": "Protection status" },
+      "failure_status": { "name": "Failure status" },
+      "cell_voltage_1": { "name": "Cell voltage 1" },
+      "cell_voltage_2": { "name": "Cell voltage 2" },
+      "cell_voltage_3": { "name": "Cell voltage 3" },
+      "cell_voltage_4": { "name": "Cell voltage 4" },
+      "cell_voltage_5": { "name": "Cell voltage 5" },
+      "cell_voltage_6": { "name": "Cell voltage 6" },
+      "cell_voltage_7": { "name": "Cell voltage 7" },
+      "cell_voltage_8": { "name": "Cell voltage 8" },
+      "cell_voltage_9": { "name": "Cell voltage 9" },
+      "cell_voltage_10": { "name": "Cell voltage 10" },
+      "cell_voltage_11": { "name": "Cell voltage 11" },
+      "cell_voltage_12": { "name": "Cell voltage 12" },
+      "cell_voltage_13": { "name": "Cell voltage 13" },
+      "cell_voltage_14": { "name": "Cell voltage 14" },
+      "cell_voltage_15": { "name": "Cell voltage 15" },
+      "cell_voltage_16": { "name": "Cell voltage 16" }
+    },
+    "binary_sensor": {
+      "charging": { "name": "Charging" },
+      "discharging": { "name": "Discharging" },
+      "balancing": { "name": "Balancing" },
+      "online": { "name": "Online" }
+    },
+    "switch": {
+      "charging_switch": { "name": "Charging" },
+      "discharging_switch": { "name": "Discharging" },
+      "connection": { "name": "Connection" }
+    }
+  }
+}

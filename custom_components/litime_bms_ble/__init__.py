@@ -1,0 +1,49 @@
+"""The LiTime BMS BLE integration."""
+
+from __future__ import annotations
+
+import logging
+
+from homeassistant.components import bluetooth
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+
+from .const import CONF_DEVICE_ADDRESS, CONF_DEVICE_NAME, DOMAIN
+from .coordinator import LitimeBmsCoordinator
+
+_LOGGER = logging.getLogger(__name__)
+
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.SWITCH,
+]
+
+type LitimeBmsConfigEntry = ConfigEntry[LitimeBmsCoordinator]
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: LitimeBmsConfigEntry) -> bool:
+    """Set up LiTime BMS BLE from a config entry."""
+    address: str = entry.data[CONF_DEVICE_ADDRESS]
+    name: str = entry.data.get(CONF_DEVICE_NAME, address)
+
+    coordinator = LitimeBmsCoordinator(hass, address, name)
+    await coordinator.async_config_entry_first_refresh()
+
+    entry.runtime_data = coordinator
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: LitimeBmsConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    if unload_ok:
+        coordinator: LitimeBmsCoordinator = entry.runtime_data
+        await coordinator.async_disconnect()
+
+    return unload_ok

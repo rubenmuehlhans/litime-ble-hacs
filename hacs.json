@@ -1,0 +1,6 @@
+{
+  "name": "LiTime BMS BLE",
+  "hacs": "1.6.0",
+  "homeassistant": "2024.2.0",
+  "render_readme": true
+}

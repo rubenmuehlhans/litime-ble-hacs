@@ -7,7 +7,6 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import CONF_DEVICE_ADDRESS, CONF_DEVICE_NAME, DOMAIN
 from .coordinator import LitimeBmsCoordinator
@@ -28,19 +27,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = LitimeBmsCoordinator(hass, address, name)
 
-    # Do not block setup if the device is temporarily unavailable.
-    # The coordinator will keep retrying on its update interval.
-    try:
-        await coordinator.async_config_entry_first_refresh()
-    except ConfigEntryNotReady:
-        _LOGGER.warning(
-            "LiTime BMS %s not reachable during setup, will keep retrying", address
-        )
-        raise
-
+    # BLE devices may not be reachable at startup. Set up the integration
+    # immediately and let the coordinator retry in the background.
+    # Do NOT use async_config_entry_first_refresh() as it raises
+    # ConfigEntryNotReady on failure, blocking the entire setup.
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Schedule the first refresh in the background - will retry on its
+    # update_interval if the device is not reachable yet.
+    await coordinator.async_request_refresh()
 
     return True
 

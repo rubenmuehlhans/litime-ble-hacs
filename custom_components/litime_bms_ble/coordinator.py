@@ -14,7 +14,7 @@ from bleak_retry_connector import establish_connection
 
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     BATTERY_STATE_CHARGE_DISABLED,
@@ -356,9 +356,13 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if not await self._ensure_connected():
             self._missed_updates += 1
-            if self._missed_updates >= MAX_MISSED_UPDATES:
-                return self._offline_data()
-            raise UpdateFailed(f"Cannot connect to {self.address}")
+            _LOGGER.debug(
+                "Cannot connect to %s (missed %d/%d)",
+                self.address,
+                self._missed_updates,
+                MAX_MISSED_UPDATES,
+            )
+            return self._offline_data()
 
         # Reset event, buffer and send status query
         self._response_event.clear()
@@ -368,41 +372,37 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             await self._send_command(CMD_QUERY_STATUS)
         except (BleakError, TimeoutError, OSError) as err:
+            _LOGGER.warning("Failed to send query to %s: %s", self.address, err)
             self._missed_updates += 1
             self._connected = False
             self._client = None
             self._write_char = None
             self._notify_char = None
-            if self._missed_updates >= MAX_MISSED_UPDATES:
-                return self._offline_data()
-            raise UpdateFailed(f"Failed to send query: {err}") from err
+            return self._offline_data()
 
         # Wait for response with timeout
         try:
             await asyncio.wait_for(self._response_event.wait(), timeout=10.0)
         except TimeoutError:
             _LOGGER.warning(
-                "Timeout waiting for response (buffer has %d bytes)",
+                "Timeout waiting for response from %s (buffer has %d bytes)",
+                self.address,
                 len(self._response_buffer),
             )
             self._missed_updates += 1
-            if self._missed_updates >= MAX_MISSED_UPDATES:
-                _LOGGER.warning(
-                    "No response for %d updates, marking offline",
-                    self._missed_updates,
-                )
-                return self._offline_data()
-            raise UpdateFailed("Timeout waiting for BMS response")
+            return self._offline_data()
 
         if self._response_data is None:
-            raise UpdateFailed("No response data received")
-
-        self._missed_updates = 0
+            _LOGGER.warning("No response data received from %s", self.address)
+            return self._offline_data()
 
         try:
-            return _parse_status_response(self._response_data)
+            result = _parse_status_response(self._response_data)
+            self._missed_updates = 0
+            return result
         except (ValueError, struct.error) as err:
-            raise UpdateFailed(f"Failed to parse response: {err}") from err
+            _LOGGER.warning("Failed to parse response from %s: %s", self.address, err)
+            return self._offline_data()
 
     def _offline_data(self) -> dict[str, Any]:
         """Return offline data with all values set to None."""

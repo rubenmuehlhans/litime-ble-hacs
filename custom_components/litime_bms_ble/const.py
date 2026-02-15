@@ -58,8 +58,8 @@ BATTERY_STATE_DISCHARGING = 0x0000
 BATTERY_STATE_CHARGING = 0x0001
 BATTERY_STATE_CHARGE_DISABLED = 0x0004
 
-# Update interval in seconds
-DEFAULT_UPDATE_INTERVAL = 5
+# Update interval in seconds (matches ESPHome YAML interval of 30s)
+DEFAULT_UPDATE_INTERVAL = 30
 
 # Max missed updates before marking offline
 MAX_MISSED_UPDATES = 5

@@ -257,6 +257,16 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._client and self._client.is_connected:
             return True
 
+        # Clean up any stale client reference first
+        if self._client is not None:
+            try:
+                await self._client.disconnect()
+            except (BleakError, TimeoutError, OSError):
+                pass
+            self._client = None
+            self._write_char = None
+            self._notify_char = None
+
         try:
             device = bluetooth.async_ble_device_from_address(
                 self.hass, self.address, connectable=True
@@ -269,7 +279,7 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 BleakClient,
                 device,
                 self.address,
-                max_attempts=3,
+                max_attempts=2,
             )
 
             # Log all services and characteristics for debugging
@@ -280,15 +290,27 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.debug("Service: %s", service.uuid)
                 for char in service.characteristics:
                     props = char.properties
-                    _LOGGER.debug("  Char: %s properties=%s", char.uuid, props)
+                    _LOGGER.debug(
+                        "  Char: %s properties=%s", char.uuid, props
+                    )
 
-                    if service.uuid.lower() == SERVICE_UUID:
-                        if "notify" in props and char.uuid.lower() == NOTIFY_CHAR_UUID:
+                    # Match by short UUID suffix (ffe0/ffe1/ffe2) to be
+                    # resilient against different UUID casing/formatting.
+                    svc_uuid = service.uuid.lower()
+                    char_uuid = char.uuid.lower()
+
+                    if "ffe0" in svc_uuid:
+                        if "notify" in props and "ffe1" in char_uuid:
                             notify_char = char
-                        if "write-without-response" in props or "write" in props:
-                            if char.uuid.lower() == WRITE_CHAR_UUID:
+                        if (
+                            "write-without-response" in props
+                            or "write" in props
+                        ):
+                            if "ffe2" in char_uuid:
                                 write_char = char
-                            elif char.uuid.lower() == NOTIFY_CHAR_UUID and write_char is None:
+                            elif (
+                                "ffe1" in char_uuid and write_char is None
+                            ):
                                 write_char = char
 
             # Subscribe to notifications on FFE1
@@ -297,7 +319,9 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     notify_char, self._notification_handler
                 )
                 self._notify_char = notify_char
-                _LOGGER.info("Subscribed to notifications on %s", notify_char.uuid)
+                _LOGGER.info(
+                    "Subscribed to notifications on %s", notify_char.uuid
+                )
             else:
                 _LOGGER.error("Notify characteristic (FFE1) not found")
                 await self._client.disconnect()
@@ -307,7 +331,9 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Use write characteristic (prefer FFE2, fallback FFE1)
             if write_char is not None:
                 self._write_char = write_char
-                _LOGGER.info("Using write characteristic %s", write_char.uuid)
+                _LOGGER.info(
+                    "Using write characteristic %s", write_char.uuid
+                )
             else:
                 _LOGGER.error("No writable characteristic found")
                 await self._client.disconnect()
@@ -317,6 +343,10 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._connected = True
             self._missed_updates = 0
             _LOGGER.info("Connected to LiTime BMS %s", self.address)
+
+            # Give the BMS time to set up after subscription
+            # (ESPHome has a 10s startup delay before first write)
+            await asyncio.sleep(1.0)
             return True
 
         except (BleakError, TimeoutError, OSError) as err:
@@ -342,8 +372,15 @@ class LitimeBmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             frame.hex(),
         )
         try:
+            # Use write-without-response if supported, otherwise write-with-response
+            use_response = "write-without-response" not in self._write_char.properties
+            _LOGGER.debug(
+                "Write response=%s (props=%s)",
+                use_response,
+                self._write_char.properties,
+            )
             await self._client.write_gatt_char(
-                self._write_char, frame, response=False
+                self._write_char, frame, response=use_response
             )
         except (BleakError, TimeoutError, OSError) as err:
             _LOGGER.warning("Failed to send command 0x%02X: %s", cmd, err)
